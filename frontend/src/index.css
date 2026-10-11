@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, system-ui, "Segoe UI", Ubuntu, Roboto, "Helvetica Neue", sans-serif;
+  --color-bg: #282832;
+  --color-panel: #32323e;
+  --color-panel-2: #3b3b49;
+  --color-line: #41414f;
+  --color-muted: #adb5bd;
+  --color-muted-2: #b5b5c3;
+  --color-body: #e9ecef;
+  --color-accent: #00aff5;
+  --color-up: #5cd59b;
+  --color-down: #f27362;
+  --color-purple: #8950fc;
+}
+
+html, body, #root { min-height: 100%; }
+body { @apply bg-bg text-body antialiased; font-size: 14px; font-feature-settings: "tnum"; }
+
+@utility card { @apply bg-panel rounded-md min-w-0; }
+@utility card-pad { @apply px-5 py-5 md:px-8 md:py-7; }
+@utility card-title { @apply text-base font-medium text-white; }
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded px-3.5 py-2 text-sm font-medium transition disabled:opacity-50 cursor-pointer; }
+@utility btn-primary { @apply btn bg-accent text-white hover:brightness-110; }
+@utility btn-secondary { @apply btn bg-panel-2 text-body hover:bg-line; }
+@utility btn-ghost { @apply btn text-muted-2 hover:text-white; }
+@utility input { @apply w-full rounded bg-panel-2 px-3 py-2 text-sm text-body placeholder:text-muted/70 outline-none border border-transparent focus:border-accent/60; }
+@utility label { @apply block text-xs text-muted mb-1.5; }
+@utility th { @apply px-2.5 py-3.5 text-left text-[12.6px] font-semibold text-muted whitespace-nowrap; }
+@utility td { @apply px-2.5 py-2.5 text-sm whitespace-nowrap; }
+@utility dotted { @apply underline decoration-dashed decoration-1 underline-offset-4; }
+
+.overflow-x-auto, .overflow-y-auto { scrollbar-color: #4a4b58 transparent; scrollbar-width: thin; }

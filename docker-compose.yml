@@ -1,0 +1,18 @@
+# Usage on the NAS:  docker compose up -d --build   → http://<nas-ip>:8000
+# Data (SQLite DB) is kept in ./data next to this file. To migrate your current data,
+# copy backend/data/stonksfolio.db into ./data before the first start.
+services:
+  stonksfolio:
+    build: .
+    image: stonksfolio:latest
+    container_name: stonksfolio
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Europe/Amsterdam              # used for the scheduled price refreshes
+      STONKSFOLIO_REFRESH_HOURS: "7,23" # hours (local time) for the automatic refresh
+      PUID: "1000"                      # user/group owning ./data (e.g. Synology: `id` of your NAS user)
+      PGID: "1000"
