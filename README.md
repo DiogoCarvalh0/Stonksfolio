@@ -1,9 +1,9 @@
 # Stonksfolio
 
-Stonksfolio is a self-hosted portfolio tracker web app with the sole difference that everything is stored locally with a clean UI. The goal is to be able to track a portfolio holdings, dividends, growth, and the market mood without any external paid dependencies. In other words, it is an app made thinking about me for you :) 
+Stonksfolio is a self-hosted portfolio tracker web app with the sole difference that everything is stored locally with a clean UI. The goal is to be able to track a portfolio holdings, dividends, growth, and the market mood without any external paid dependencies. In other words, it is an app made thinking about me for you :)
 
 <p align="center">
-  <img src="/assets/Demo/Demo3.gif?raw=true" width="100%" alt="Demo" />
+  <img src="/assets/Demo/Demo.gif?raw=true" width="100%" alt="Demo" />
 </p>
 
 ## Quick Start
