@@ -67,6 +67,33 @@ def test_plausible_isin_secondary_listing():
     assert not _plausible_isin("US3032501046", {"quoteType": "EQUITY", "country": None})
 
 
+def test_onvista_isin_depositary_receipts(monkeypatch):
+    import requests
+
+    from app import market_data as md
+
+    rows = [
+        {"entityType": "STOCK", "isin": "US8740391003", "symbol": "TSFA", "name": "TSMC Taiwan Semiconductor (ADR)"},
+        {"entityType": "STOCK", "isin": "TW0002330008", "symbol": "TSFB", "name": "TSMC Taiwan Semiconductor"},
+    ]
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"list": rows}
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resp())
+    info = {"quoteType": "EQUITY", "country": "Taiwan", "longName": "Taiwan Semiconductor Manufacturing Company Limited"}
+    # The NYSE ADR and its German copies share the ADR's ISIN, so they're linked as listings of one security.
+    assert md._onvista_isin("TSM", info) == "US8740391003"
+    assert md._onvista_isin("TSFA.F", info) == "US8740391003"
+    assert md._onvista_isin("TSFA.DE", {**info, "country": None}) == "US8740391003"
+    # A home-market listing keeps the ordinary share's ISIN.
+    assert md._onvista_isin("2330.TW", info) == "TW0002330008"
+
+
 def test_fx_factor_same_currency():
     from app.market_data import _fx_factor
 

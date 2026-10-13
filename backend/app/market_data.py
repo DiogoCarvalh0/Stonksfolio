@@ -72,7 +72,7 @@ PRICE_DENOMINATED_KEYS = {
 HOME_SUFFIX = {
     "US": "", "CA": ".TO", "NL": ".AS", "DE": ".DE", "FR": ".PA", "GB": ".L", "IT": ".MI", "ES": ".MC",
     "CH": ".SW", "BE": ".BR", "PT": ".LS", "DK": ".CO", "SE": ".ST", "NO": ".OL", "FI": ".HE", "AT": ".VI",
-    "IE": ".IR", "AU": ".AX", "HK": ".HK", "JP": ".T",
+    "IE": ".IR", "AU": ".AX", "HK": ".HK", "JP": ".T", "TW": ".TW",
 }
 
 COUNTRY_ISO = {
@@ -86,7 +86,7 @@ COUNTRY_ISO = {
 
 FUND_ISIN_PREFIXES = ("IE", "LU", "DE", "FR", "NL", "US", "GB", "CH")
 # Bump to re-run the ISIN lookup for securities cached with an older (less capable) lookup.
-ISIN_LOOKUP_VERSION = 3
+ISIN_LOOKUP_VERSION = 4
 
 
 def _plausible_isin(isin: Optional[str], info: dict) -> bool:
@@ -113,8 +113,15 @@ def _clean_company_name(name: str) -> str:
     return re.sub(r"[\s,]+", " ", name).strip(" .,")
 
 
+_DEPOSITARY_RECEIPT = re.compile(r"\b[AG]DRS?\b|\(CDR", re.IGNORECASE)
+
+
 def _onvista_isin(symbol: str, info: dict) -> Optional[str]:
-    """ISIN via onvista's instrument search (covers European listings and UCITS ETFs)."""
+    """ISIN via onvista's instrument search (covers European listings and UCITS ETFs).
+
+    Depositary receipts (e.g. TSM and its German copies TSFA.F/TSFA.DE) get the receipt's own ISIN rather
+    than the underlying share's: they trade at a different share ratio, so they're a separate group of listings.
+    """
     import requests
 
     fund = info.get("quoteType") in ("ETF", "MUTUALFUND")
@@ -122,7 +129,10 @@ def _onvista_isin(symbol: str, info: dict) -> Optional[str]:
     long_name = info.get("longName") or info.get("shortName") or ""
     clean = _clean_company_name(long_name)
     key_word = next((w for w in re.split(r"[\s,.]+", clean.upper()) if len(w) > 1), "")
-    queries = [q for q in (symbol.split(".")[0].split("-")[0], clean, long_name) if q]
+    ticker = symbol.split(".")[0].split("-")[0].upper()
+    # A US listing (no suffix) of a foreign company is (almost always) a depositary receipt.
+    us_receipt = "." not in symbol and info.get("country") not in (None, "United States")
+    queries = [q for q in (ticker, clean, long_name) if q]
     if fund:  # fund tickers rarely match; the full name pins the share class (Acc/Dist, hedged)
         queries = [q for q in (long_name, clean) if q]
     for q in dict.fromkeys(queries):
@@ -135,13 +145,20 @@ def _onvista_isin(symbol: str, info: dict) -> Optional[str]:
         except Exception as exc:  # pragma: no cover - network
             log.info("onvista ISIN lookup failed for %s: %s", symbol, exc)
             return None
+        rows = [r for r in rows if r.get("entityType") == want and is_isin(r.get("isin") or "")
+                and (not key_word or key_word in (r.get("name") or "").upper())]
+        receipts = [r for r in rows if _DEPOSITARY_RECEIPT.search(r.get("name") or "")]
+        if not fund:
+            # onvista's ticker is the German one, shared by Yahoo's German listings (TSFA -> TSFA.F)
+            for r in rows:
+                if (r.get("symbol") or "").upper() == ticker and (r in receipts or _plausible_isin(r["isin"], info)):
+                    return r["isin"]
+            if us_receipt:
+                for r in receipts:
+                    if r["isin"].startswith("US"):
+                        return r["isin"]
         for r in rows:
-            name = (r.get("name") or "").upper()
-            if r.get("entityType") != want or "(ADR)" in name or "(CDR" in name:
-                continue
-            if key_word and key_word not in name:
-                continue
-            if _plausible_isin(r.get("isin"), info):
+            if r not in receipts and _plausible_isin(r["isin"], info):
                 return r["isin"]
     return None
 
@@ -157,6 +174,8 @@ def _fetch_isin(t: "yf.Ticker", info: dict) -> Optional[str]:
         isin = t.isin
     except Exception:
         return None
+    if isin and is_isin(isin) and isin.startswith("US") and "." not in t.ticker and info.get("quoteType") == "EQUITY":
+        return isin  # US listing: a foreign company's US ISIN is its depositary receipt
     return isin if _plausible_isin(isin, info) else None
 
 _refresh_lock = threading.Lock()
@@ -234,7 +253,7 @@ FIGI_EXCHANGES = {
     "US": "", "GY": ".DE", "NA": ".AS", "LN": ".L", "FP": ".PA", "IM": ".MI", "SM": ".MC",
     "SW": ".SW", "SE": ".SW", "BB": ".BR", "PL": ".LS", "DC": ".CO", "SS": ".ST", "NO": ".OL",
     "FH": ".HE", "AV": ".VI", "ID": ".IR", "GR": ".F", "GS": ".SG", "GM": ".MU", "CN": ".TO",
-    "AU": ".AX", "HK": ".HK", "JT": ".T",
+    "AU": ".AX", "HK": ".HK", "JT": ".T", "TT": ".TW",
 }
 _isin_cache: Dict[str, List[dict]] = {}
 # Symbols found through an ISIN search -> that ISIN (lets their metadata keep the ISIN the user searched with).
@@ -550,16 +569,17 @@ def ensure_security(db: Session, symbol: str, force: bool = False) -> Security:
     if sec and not force and sec.info_updated_at and now - sec.info_updated_at < INFO_MAX_AGE \
             and cached.get("info_v") == INFO_VERSION:
         info = cached
-        if info.get("isin") or info.get("isin_v") == ISIN_LOOKUP_VERSION:
+        if info.get("isin_v") == ISIN_LOOKUP_VERSION:
             return sec
         # metadata is fresh; only (re)try the ISIN lookup
+        old_isin = info.get("isin")
         info["isin"] = _fetch_isin(yf.Ticker(symbol), info) if info.get("quoteType") in ("EQUITY", "ETF", "MUTUALFUND") else None
         info["isin_v"] = ISIN_LOOKUP_VERSION
         sec.info_json = json.dumps(info)
         db.commit()
-        if not info["isin"]:
+        if info["isin"] == old_isin:
             return sec
-        # a newly found ISIN can fill fundamentals from the primary listing: do a full refresh
+        # a changed ISIN changes the primary listing (and its fundamentals): do a full refresh
     try:
         info = fetch_info(symbol)
     except Exception as exc:
